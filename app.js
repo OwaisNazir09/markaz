@@ -22,6 +22,7 @@ app.use(express.urlencoded({ extended: true }));
 const allowedOrigins = [
   "https://markazi-auqaf.netlify.app",
   "https://markaziauqaf.rationaltabs.com",
+  "https://grand-raindrop-f94ac1.netlify.app",
 ];
 
 const corsOptions = {
@@ -48,7 +49,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 /* 🔴 IMPORTANT: Handle preflight requests */
-app.options("*", cors(corsOptions));
+app.options("/*", cors(corsOptions));
 
 /* -------------------- SECURITY -------------------- */
 app.use(helmet());
