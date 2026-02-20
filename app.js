@@ -17,10 +17,21 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 //Cors
+const allowedOrigins = [
+  "https://markazi-auqaf.netlify.app",
+  "https://grand-raindrop-f94ac1.netlify.app",
+];
 app.use(
   cors({
     credentials: true,
-    origin: "*",
+    origin: (origin, callback) => {
+      // allow requests with no origin (e.g. mobile apps, curl, Postman)
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS: origin ${origin} not allowed`));
+      }
+    },
     optionsSuccessStatus: 200,
   }),
 );
