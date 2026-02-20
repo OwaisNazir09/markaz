@@ -8,8 +8,6 @@ const connectDB = require("./src/config/db");
 const moduleExporter = require("./src/modules/moduleExporter");
 
 const app = express();
-const requestLogger = require("./src/middlewares/requestLogger");
-app.use(requestLogger);
 
 /* -------------------- DATABASE -------------------- */
 connectDB();
@@ -18,41 +16,19 @@ connectDB();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-/* -------------------- CORS CONFIG -------------------- */
-const allowedOrigins = [
-  "https://markazi-auqaf.netlify.app",
-  "https://markaziauqaf.rationaltabs.com",
-  "https://grand-raindrop-f94ac1.netlify.app",
-];
-
-const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow requests without origin (Postman, curl, mobile apps)
-    if (
-      !origin ||
-      origin.startsWith("http://localhost") ||
-      origin.startsWith("http://127.0.0.1") ||
-      origin.startsWith("http://192.168.") ||
-      origin.startsWith("http://[::1]") ||
-      allowedOrigins.includes(origin)
-    ) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
-    }
-  },
-  credentials: true,
-  methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-};
-
-app.use(cors(corsOptions));
-
-/* 🔴 IMPORTANT: Handle preflight requests */
-app.options("/*", cors(corsOptions));
-
+//Cors
+app.use(
+  cors({
+    credentials: true,
+    origin: "*",
+    optionsSuccessStatus: 200,
+  }),
+);
 /* -------------------- SECURITY -------------------- */
 app.use(helmet());
+
+const requestLogger = require("./src/middlewares/requestLogger");
+app.use(requestLogger);
 
 /* -------------------- ROUTES -------------------- */
 moduleExporter(app);
