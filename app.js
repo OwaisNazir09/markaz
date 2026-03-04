@@ -56,6 +56,9 @@ process.on("uncaughtException", (err) => {
   console.error("Uncaught Exception:", err && (err.stack || err));
 });
 
+
+
+
 /* -------------------- FIREBASE INIT -------------------- */
 const { initializeFirebase } = require("./src/services/firebase");
 initializeFirebase().catch((err) => {
