@@ -4,51 +4,128 @@ const { sendPushNotificationInBatches } = require("../../services/firebase");
 
 const createAndSendNotification = async (req, res) => {
     try {
+        console.log("=== Starting createAndSendNotification ===");
+        console.log("Request body:", JSON.stringify(req.body, null, 2));
+        console.log("User ID from req.user:", req.user?.id);
+
         const { title, message, type, data, selectedUsers, sendToAll } = req.body;
+
+        console.log("Extracted values:", {
+            title,
+            message,
+            type,
+            data: data ? "present" : "undefined",
+            selectedUsers: selectedUsers ? `${selectedUsers.length} users` : "undefined",
+            sendToAll
+        });
 
         let userIds = [];
         let fcmTokens = [];
 
         if (sendToAll) {
-            // Send to all active users
-            const users = await User.find({ status: true }).select("_id fcmTokens");
-            userIds = users.map(u => u._id);
+            console.log("Fetching ALL users with status: true");
+
+            const users = await User.find({ status: true }).select("_id profileDetails.fcmTokens");
+            console.log(`Found ${users.length} active users`);
+
+            if (users.length > 0) {
+                console.log("First user sample:", JSON.stringify(users[0], null, 2));
+            }
+
+            userIds = users.map(u => {
+                console.log(`User ${u._id}: profileDetails.fcmTokens exists?`, !!u.profileDetails?.fcmTokens);
+                return u._id;
+            });
 
             users.forEach(user => {
-                if (user.fcmTokens && user.fcmTokens.length > 0) {
-                    user.fcmTokens.forEach(tokenObj => {
-                        if (tokenObj.token) {
+                // Check nested structure - fcmTokens is inside profileDetails
+                const userTokens = user.profileDetails?.fcmTokens;
+                console.log(`User ${user._id}: Tokens found: ${userTokens?.length || 0}`);
+
+                if (userTokens && userTokens.length > 0) {
+                    userTokens.forEach((tokenObj, index) => {
+                        if (tokenObj && tokenObj.token) {
+                            console.log(`  Token ${index + 1}: ${tokenObj.token.substring(0, 15)}... (valid)`);
                             fcmTokens.push(tokenObj.token);
+                        } else {
+                            console.log(`  Token ${index + 1}: INVALID or missing token property`);
                         }
                     });
+                } else {
+                    console.log(`  User ${user._id}: No valid tokens found`);
                 }
             });
         } else if (selectedUsers && selectedUsers.length > 0) {
-            // Send to specific users
+            console.log(`Fetching SPECIFIC users (${selectedUsers.length} IDs):`, selectedUsers);
+
             const users = await User.find({
                 _id: { $in: selectedUsers },
                 status: true,
-            }).select("_id fcmTokens");
+            }).select("_id profileDetails.fcmTokens");
 
-            userIds = users.map(u => u._id);
+            console.log(`Found ${users.length} matching users from the selected list`);
+
+            if (users.length !== selectedUsers.length) {
+                const foundIds = users.map(u => u._id.toString());
+                const missingIds = selectedUsers.filter(id => !foundIds.includes(id));
+                console.log("WARNING: Some selected users not found or inactive:", missingIds);
+            }
+
+            userIds = users.map(u => {
+                console.log(`User ${u._id}: profileDetails.fcmTokens exists?`, !!u.profileDetails?.fcmTokens);
+                return u._id;
+            });
 
             users.forEach(user => {
-                if (user.fcmTokens && user.fcmTokens.length > 0) {
-                    user.fcmTokens.forEach(tokenObj => {
-                        if (tokenObj.token) {
+                const userTokens = user.profileDetails?.fcmTokens;
+                console.log(`User ${user._id}: Tokens found: ${userTokens?.length || 0}`);
+
+                if (userTokens && userTokens.length > 0) {
+                    userTokens.forEach((tokenObj, index) => {
+                        if (tokenObj && tokenObj.token) {
+                            console.log(`  Token ${index + 1}: ${tokenObj.token.substring(0, 15)}... (valid)`);
                             fcmTokens.push(tokenObj.token);
+                        } else {
+                            console.log(`  Token ${index + 1}: INVALID or missing token property`);
                         }
                     });
+                } else {
+                    console.log(`  User ${user._id}: No valid tokens found`);
                 }
             });
         } else {
+            console.log("ERROR: No recipients specified");
             return res.status(400).json({
                 success: false,
                 message: "Please select recipients or choose to send to all users",
             });
         }
 
+        console.log("=== Recipient Summary ===");
+        console.log(`Total userIds: ${userIds.length}`);
+        console.log(`Total fcmTokens collected: ${fcmTokens.length}`);
+
+        if (fcmTokens.length > 0) {
+            console.log("Sample of collected tokens (first 3):");
+            fcmTokens.slice(0, 3).forEach((token, i) => {
+                console.log(`  Token ${i + 1}: ${token.substring(0, 25)}...`);
+            });
+        } else {
+            console.log("WARNING: No FCM tokens collected!");
+        }
+
         // Create notification in database
+        console.log("=== Creating Notification ===");
+        console.log("Notification data:", {
+            title,
+            message,
+            type: type || "system",
+            data: data || {},
+            sender: req.user.id,
+            sentAt: new Date(),
+            userIdsCount: userIds.length
+        });
+
         const notification = await Service.createNotification(
             {
                 title,
@@ -61,24 +138,54 @@ const createAndSendNotification = async (req, res) => {
             userIds
         );
 
-        // Send push notifications in batches
+        console.log("Notification created with ID:", notification._id);
+        console.log("Notification object:", JSON.stringify(notification, null, 2));
+
         let pushResult = { totalSuccess: 0, totalFailure: 0 };
+
         if (fcmTokens.length > 0) {
-            pushResult = await sendPushNotificationInBatches(
+            console.log("=== Sending Push Notifications ===");
+            console.log("Push notification data:", {
                 title,
                 message,
-                fcmTokens,
-                {
+                tokenCount: fcmTokens.length,
+                data: {
                     type: type || "system",
                     notificationId: notification._id.toString(),
                     ...data,
                 }
-            );
+            });
 
-            // Update notification with sent status
-            await Service.updateRecipientStatus(notification._id, null, "sent");
+            try {
+                pushResult = await sendPushNotificationInBatches(
+                    title,
+                    message,
+                    fcmTokens,
+                    {
+                        type: type || "system",
+                        notificationId: notification._id.toString(),
+                        ...data,
+                    }
+                );
+
+                console.log("Push notification result:", pushResult);
+            } catch (pushError) {
+                console.error("Error sending push notifications:", pushError);
+                console.error("Push error stack:", pushError.stack);
+            }
+
+            console.log("=== Updating Recipient Status ===");
+            try {
+                await Service.updateRecipientStatus(notification._id, null, "sent");
+                console.log("Recipient status updated to 'sent'");
+            } catch (statusError) {
+                console.error("Error updating recipient status:", statusError);
+            }
+        } else {
+            console.log("Skipping push notifications - no tokens available");
         }
 
+        console.log("=== Request Completed Successfully ===");
         return res.status(201).json({
             success: true,
             message: "Notification created and sent successfully",
@@ -91,7 +198,12 @@ const createAndSendNotification = async (req, res) => {
             },
         });
     } catch (err) {
-        console.error("Error in createAndSendNotification:", err);
+        console.error("=== ERROR in createAndSendNotification ===");
+        console.error("Error name:", err.name);
+        console.error("Error message:", err.message);
+        console.error("Error stack:", err.stack);
+        console.error("Error statusCode:", err.statusCode);
+
         return res.status(err.statusCode || 500).json({
             success: false,
             message: err.message || "Internal Server Error",

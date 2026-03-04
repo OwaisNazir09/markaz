@@ -28,6 +28,7 @@ const apiAuth = (req, res, next) => {
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.user = decoded;
+        console.log("API Auth user:", req.user);
 
         if (req.user.role !== "management" && req.user.role !== "shopkeeper") {
             return res.status(403).json({

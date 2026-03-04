@@ -1,34 +1,8 @@
 const LedgerAccount = require("./models/LedgerAccount");
 const LedgerTransaction = require("./models/LedgerTransaction");
-const { postJournalEntry } = require("./engine");
+const { postJournalEntry, reverseTransaction } = require("./engine");
 
 // ========== UTILITIES ==========
-
-/**
- * Adjusts account balance based on accounting nature.
- * Asset/Expense nature: DEBIT increases (+), CREDIT decreases (-)
- * Liability/Income nature: DEBIT decreases (-), CREDIT increases (+)
- */
-const adjustAccountBalance = (account, amount, direction) => {
-  const isDebitNature = ["Asset", "Expense"].includes(account.accountType);
-
-  if (direction === "DEBIT") {
-    if (isDebitNature) account.balance += amount;
-    else account.balance -= amount;
-  } else if (direction === "CREDIT") {
-    if (isDebitNature) account.balance -= amount;
-    else account.balance += amount;
-  }
-
-  // Protection for Cash Equivalent accounts
-  if (account.cashequivalent && account.balance < 0) {
-    throw new Error(
-      `Insufficient balance in cash-equivalent account: ${account.name}`
-    );
-  }
-
-  return account.balance;
-};
 
 // ========== ACCOUNT SERVICES ==========
 const getAllAccounts = async (filter = {}, page, limit, search) => {
@@ -54,13 +28,12 @@ const getAccountById = async (id) => {
   const { getAccountNature } = require("./engine");
   const nature = getAccountNature(account);
 
-  // Add summary info (all time total in/out and current calculated balance)
   const allTransactionsQuery = await LedgerTransaction.find({
     $or: [
       { debitAccountId: id },
       { creditAccountId: id },
-      { fromAccountId: id }, // Keep legacy for transitional data
-      { toAccountId: id }
+      { fromAccountId: id },
+      { toAccountId: id },
     ],
   }).lean();
 
@@ -72,9 +45,10 @@ const getAccountById = async (id) => {
   // NATURE AWARE BALANCE:
   // Asset/Expense: In (Debit) - Out (Credit)
   // Liability/Income: In (Credit) - Out (Debit)
-  const calculatedBalance = nature === "DEBIT"
-    ? (totalDebit - totalCredit)
-    : (totalCredit - totalDebit);
+  const calculatedBalance =
+    nature === "DEBIT"
+      ? totalDebit - totalCredit
+      : totalCredit - totalDebit;
 
   return {
     ...account,
@@ -97,11 +71,9 @@ const prepareAccountData = (data) => {
     "panNumber",
   ];
 
-  // Check if any specific field group exists in flat format
   const hasBankFields = bankFields.some((f) => accountData[f] !== undefined);
   const hasContactFields = contactFields.some((f) => accountData[f] !== undefined);
 
-  // Structure Bank Details if flat fields are present
   if (hasBankFields && !accountData.bankDetails) {
     accountData.bankDetails = {
       bankName: accountData.bankName || null,
@@ -112,7 +84,6 @@ const prepareAccountData = (data) => {
     };
   }
 
-  // Structure Contact Info if flat fields are present
   if (hasContactFields && !accountData.contactInfo) {
     accountData.contactInfo = {
       personName: accountData.personName || null,
@@ -124,7 +95,6 @@ const prepareAccountData = (data) => {
     };
   }
 
-  // Remove flat fields to avoid cluttering or schema issues
   bankFields.forEach((f) => delete accountData[f]);
   contactFields.forEach((f) => delete accountData[f]);
 
@@ -142,7 +112,6 @@ const createAccount = async (accountData) => {
   }
   const account = await LedgerAccount.create(structuredData);
 
-  // Handle default type side effects if specified
   if (structuredData.defaultType && structuredData.defaultType !== "None") {
     await setAccountDefaultType(account._id, structuredData.defaultType);
   }
@@ -191,7 +160,6 @@ const setAccountDefaultType = async (id, defaultType) => {
     throw error;
   }
 
-  // Unset this specific default type from all other accounts
   if (defaultType !== "None") {
     await LedgerAccount.updateMany(
       { defaultType: defaultType },
@@ -200,8 +168,6 @@ const setAccountDefaultType = async (id, defaultType) => {
   }
 
   account.defaultType = defaultType;
-
-  // Backward compatibility
   if (defaultType === "GeneralIncome") account.isDefault = true;
   else account.isDefault = false;
 
@@ -213,80 +179,66 @@ const getDefaultAccount = async (defaultType) => {
 };
 
 const setAccountAsDefault = async (id) => {
-  // Wrapper function for backward compatibility
-  // Sets the account as the default "GeneralIncome" account
   return await setAccountDefaultType(id, "GeneralIncome");
-};
-
-
-const recordOnlineTransaction = async (amount, transactionId, description, createdBy = "System") => {
-
-
-  let assetAccount = await getDefaultAccount("OnlineCollection");
-  let incomeAccount = await getDefaultAccount("GeneralDonation");
-
-  // Auto-create default accounts if they don't exist
-  if (!assetAccount) {
-    console.log("Auto-creating default Online Collection account...");
-    const newAsset = await LedgerAccount.create({
-      name: "Online Collection (Auto)",
-      accountType: "Asset",
-      balance: 0,
-      defaultType: "OnlineCollection",
-      createdBy: "System"
-    });
-    assetAccount = newAsset;
-  }
-
-  if (!incomeAccount) {
-    console.log("Auto-creating default General Donation account...");
-    const newIncome = await LedgerAccount.create({
-      name: "General Donation (Auto)",
-      accountType: "Income",
-      balance: 0,
-      defaultType: "GeneralDonation",
-      createdBy: "System"
-    });
-    incomeAccount = newIncome;
-  }
-
-  const numericAmount = parseFloat(amount);
-
-
-  const incomeBefore = incomeAccount.balance;
-  const assetBefore = assetAccount.balance;
-
-  incomeAccount.balance += numericAmount;
-  assetAccount.balance += numericAmount;
-
-  await Promise.all([incomeAccount.save(), assetAccount.save()]);
-
-  const ledgerEntry = new LedgerTransaction({
-    fromAccountId: incomeAccount._id,
-    toAccountId: assetAccount._id,
-    amount: numericAmount,
-    remark: description,
-    entryType: "Income",
-    type: "Receipt",
-    paymenttype: "Online",
-    externalSource: "Razorpay",
-    reference: transactionId,
-    createdBy,
-    senderBalanceBefore: incomeBefore,
-    senderBalanceAfter: incomeAccount.balance,
-    receiverBalanceBefore: assetBefore,
-    receiverBalanceAfter: assetAccount.balance,
-  });
-
-  return await ledgerEntry.save();
 };
 
 const getAccountsByType = async (types) => {
   return await LedgerAccount.find({
     accountType: { $in: types },
   })
-    .select("_id name accountType balance")
+    .select("_id name accountType balance cashequivalent")
     .lean();
+};
+
+// ========== ONLINE TRANSACTION (Razorpay/External) ==========
+const recordOnlineTransaction = async (
+  amount,
+  transactionId,
+  description,
+  createdBy = "System"
+) => {
+  let assetAccount = await getDefaultAccount("OnlineCollection");
+  let incomeAccount = await getDefaultAccount("GeneralDonation");
+
+  if (!assetAccount) {
+    console.log("Auto-creating default Online Collection account...");
+    assetAccount = await LedgerAccount.create({
+      name: "Online Collection (Auto)",
+      accountType: "Asset",
+      balance: 0,
+      cashequivalent: true,
+      defaultType: "OnlineCollection",
+      createdBy: "System",
+    });
+  }
+
+  if (!incomeAccount) {
+    console.log("Auto-creating default General Donation account...");
+    incomeAccount = await LedgerAccount.create({
+      name: "General Donation (Auto)",
+      accountType: "Income",
+      balance: 0,
+      defaultType: "GeneralDonation",
+      createdBy: "System",
+    });
+  }
+
+  // Correct double-entry for online receipt:
+  //   DEBIT:  Cash/Bank Asset (Online Collection) — asset increases
+  //   CREDIT: Income Account (General Donation)   — income increases
+  // This is a Receipt + Income in one step (cash received directly)
+  return await postJournalEntry({
+    debitAccountId: assetAccount._id,
+    creditAccountId: incomeAccount._id,
+    amount: parseFloat(amount),
+    entryType: "Receipt",
+    paymenttype: "Online",
+    externalSource: "Razorpay",
+    reference: transactionId,
+    remark: description,
+    createdBy,
+    skipValidation: true, // System-generated entry, bypass UI validation
+  });
 };
 
 // ========== TRANSACTION SERVICES ==========
@@ -301,13 +253,18 @@ const getRecentTransactions = async (entryType, limit = 20) => {
     .lean();
 };
 
-const getAccountTransactions = async (accountId, page = 1, limit = 10, search = "") => {
+const getAccountTransactions = async (
+  accountId,
+  page = 1,
+  limit = 10,
+  search = ""
+) => {
   const filter = {
     $or: [
       { debitAccountId: accountId },
       { creditAccountId: accountId },
-      { fromAccountId: accountId }, // Logic for transitional data
-      { toAccountId: accountId }
+      { fromAccountId: accountId },
+      { toAccountId: accountId },
     ],
   };
 
@@ -334,23 +291,109 @@ const getAccountTransactions = async (accountId, page = 1, limit = 10, search = 
   return { data: enriched, total, totalDebit, totalCredit };
 };
 
-const createExpenseTransaction = async (transactionData) => {
-  const { fromAccountId, toAccountId, amount, remark, paymenttype, createdBy } =
-    transactionData;
+// ========== RECEIPT ==========
+/**
+ * Receipt: Cash/Bank receives money from customer/external payer.
+ * Double-Entry:
+ *   DEBIT:  Cash/Bank (from toAccountId — where money lands)
+ *   CREDIT: Customer/Payer (from fromAccountId — who paid)
+ *
+ * UI convention: fromAccountId = payer, toAccountId = cash/bank
+ */
+const createReceiptTransaction = async (transactionData) => {
+  const { fromAccountId, toAccountId, amount, remark, paymenttype, createdBy } = transactionData;
 
-  // Validate that from and to accounts are different
-  if (fromAccountId === toAccountId) {
-    const error = new Error("From and To accounts cannot be the same!");
-    error.statusCode = 400;
-    throw error;
-  }
+  return await postJournalEntry({
+    debitAccountId: toAccountId,   // Cash/Bank receives → DEBIT asset
+    creditAccountId: fromAccountId, // Payer ledger reduces → CREDIT receivable
+    amount,
+    entryType: "Receipt",
+    remark,
+    createdBy,
+    paymenttype: paymenttype || "Cash",
+  });
+};
 
-  // Ledger 2.0 Role Mapping:
-  // DEBIT: Expense Category (Increases Expense)
-  // CREDIT: Payer Account (Decreases Asset or Increases Liability)
+// ========== PAYMENT ==========
+/**
+ * Payment: Cash/Bank pays out to a vendor/payee.
+ * Double-Entry:
+ *   DEBIT:  Payee/Vendor (from toAccountId — receiving the payment)
+ *   CREDIT: Cash/Bank (from fromAccountId — paying out)
+ *
+ * UI convention: fromAccountId = cash/bank, toAccountId = payee
+ */
+const createPaymentTransaction = async (transactionData) => {
+  const { fromAccountId, toAccountId, amount, remark, paymenttype, createdBy } = transactionData;
+
+  return await postJournalEntry({
+    debitAccountId: toAccountId,   // Payee account → DEBIT (reduces their payable)
+    creditAccountId: fromAccountId, // Cash/Bank → CREDIT (reduces asset)
+    amount,
+    entryType: "Payment",
+    remark,
+    createdBy,
+    paymenttype: paymenttype || "Cash",
+  });
+};
+
+// ========== TRANSFER ==========
+/**
+ * Transfer: Move money between own Cash/Bank accounts.
+ * Double-Entry:
+ *   DEBIT:  To Account (destination cash/bank — increases)
+ *   CREDIT: From Account (source cash/bank — decreases)
+ */
+const createTransferTransaction = async (transactionData) => {
+  const { fromAccountId, toAccountId, amount, remark, createdBy } = transactionData;
+
   return await postJournalEntry({
     debitAccountId: toAccountId,
     creditAccountId: fromAccountId,
+    amount,
+    entryType: "Transfer",
+    remark,
+    createdBy,
+    paymenttype: "Transfer",
+  });
+};
+
+// ========== INCOME (Accrual) ==========
+/**
+ * Income Accrual: Income earned but not yet received.
+ * Double-Entry:
+ *   DEBIT:  Customer/Receivable (from fromAccountId — now owes money)
+ *   CREDIT: Income Category (from toAccountId — income recognized)
+ *
+ * NOTE: Does NOT touch any Cash/Bank account.
+ */
+const createIncomeTransaction = async (transactionData) => {
+  const { fromAccountId, toAccountId, amount, remark, createdBy } = transactionData;
+
+  return await postJournalEntry({
+    debitAccountId: fromAccountId, // Receivable/Person → DEBIT (increases receivable)
+    creditAccountId: toAccountId,   // Income Category → CREDIT (increases income)
+    amount,
+    entryType: "Income",
+    remark,
+    createdBy,
+    paymenttype: "Accrual",
+  });
+};
+
+// ========== EXPENSE ==========
+/**
+ * Expense: Record spending.
+ * Double-Entry:
+ *   DEBIT:  Expense Category (from toAccountId — expense recognized)
+ *   CREDIT: Payer / Cash/Bank (from fromAccountId — asset decreases or payable increases)
+ */
+const createExpenseTransaction = async (transactionData) => {
+  const { fromAccountId, toAccountId, amount, remark, paymenttype, createdBy } = transactionData;
+
+  return await postJournalEntry({
+    debitAccountId: toAccountId,   // Expense Category → DEBIT
+    creditAccountId: fromAccountId, // Cash/Bank or Payable → CREDIT
     amount,
     entryType: "Expense",
     remark,
@@ -359,25 +402,23 @@ const createExpenseTransaction = async (transactionData) => {
   });
 };
 
+// ========== SETTLEMENT (Legacy) ==========
+/**
+ * Settlement: Clears debt between accounts.
+ * Type = Payment: Cash/Bank (from) → Payee (to)
+ * Type = Receipt: Customer (from) → Cash/Bank (to)
+ */
 const createSettlementTransaction = async (transactionData) => {
-  const { fromAccountId, toAccountId, type, amount, remark, createdBy } =
-    transactionData;
+  const { fromAccountId, toAccountId, type, amount, remark, createdBy } = transactionData;
 
-  // Validate that from and to accounts are different
   if (fromAccountId === toAccountId) {
     const error = new Error("From and To accounts cannot be the same!");
     error.statusCode = 400;
     throw error;
   }
 
-  // Ledger 2.0 Role Mapping for Settlement:
-  // IF type is Payment (Source -> Dest):
-  //   DEBIT: Destination account (Increases balance)
-  //   CREDIT: Source account (Decreases balance)
-  // IF type is Receipt (Dest -> Source reversed):
-  //   DEBIT: Source account
-  //   CREDIT: Destination account
-
+  // For Settlement (Payment type): FromAccount credits, ToAccount debits
+  // For Settlement (Receipt type): ToAccount credits, FromAccount debits
   const debitId = type === "Payment" ? toAccountId : fromAccountId;
   const creditId = type === "Payment" ? fromAccountId : toAccountId;
 
@@ -389,9 +430,16 @@ const createSettlementTransaction = async (transactionData) => {
     remark,
     createdBy,
     paymenttype: "Cash",
+    skipValidation: true, // Legacy type — skip strict validation
   });
 };
 
+// ========== CREDIT NOTE (Legacy Income) ==========
+/**
+ * Credit Note: Record income, optionally with external source.
+ * DEBIT:  Payer/Receivable (internal) or null (external)
+ * CREDIT: Income Category
+ */
 const createCreditNoteTransaction = async (transactionData) => {
   const {
     fromType,
@@ -403,19 +451,21 @@ const createCreditNoteTransaction = async (transactionData) => {
     createdBy,
   } = transactionData;
 
-  // Ledger 2.0 Role Mapping for Income (Credit Note):
-  // DEBIT: Payer/Receivable (Increases Receivable) OR external
-  // CREDIT: Income Category (Increases Income)
-
   return await postJournalEntry({
     debitAccountId: fromType === "internal" ? fromAccountId : null,
     creditAccountId: toAccountId,
     amount,
-    entryType: "Income",
+    entryType: "CreditNote",
     externalSource: fromType === "external" ? externalSource : null,
     remark,
     createdBy,
+    skipValidation: true,
   });
+};
+
+// ========== REVERSE TRANSACTION (Audit Safe) ==========
+const reverseTransactionService = async (transactionId, reversedBy) => {
+  return await reverseTransaction(transactionId, reversedBy);
 };
 
 // ========== REPORTING SERVICES ==========
@@ -464,8 +514,12 @@ const getFinancialSummary = async (allAccounts) => {
     .filter((acc) => acc.accountType === "Expense")
     .reduce((sum, acc) => sum + (acc.balance || 0), 0);
 
-  // Corrected accounting equation: Net Worth = Assets - Liabilities
   const netWorth = totalAssets - totalLiabilities;
+
+  // Cash position: sum of all cashequivalent Asset accounts
+  const cashPosition = allAccounts
+    .filter((acc) => acc.accountType === "Asset" && acc.cashequivalent)
+    .reduce((sum, acc) => sum + (acc.balance || 0), 0);
 
   return {
     totalAssets,
@@ -473,7 +527,71 @@ const getFinancialSummary = async (allAccounts) => {
     totalIncome,
     totalExpenses,
     netWorth,
+    cashPosition,
   };
+};
+
+// ========== LEDGER HEALTH CHECK ==========
+/**
+ * Detects potential accounting anomalies:
+ * 1. Reversed receipt/payment (cash/bank was CREDITED in a Receipt, or DEBITED in a Payment)
+ * 2. Receivable increasing after receipts (should decrease)
+ * 3. Accounts with abnormal debit growth
+ */
+const getLedgerHealthAlerts = async () => {
+  const alerts = [];
+
+  // 1. Find Receipt transactions where debitAccountId is NOT cashequivalent
+  const suspectReceipts = await LedgerTransaction.find({ entryType: "Receipt", isReversal: false })
+    .populate("debitAccountId creditAccountId")
+    .lean();
+
+  for (const tx of suspectReceipts) {
+    if (tx.debitAccountId && !tx.debitAccountId.cashequivalent) {
+      alerts.push({
+        type: "REVERSED_RECEIPT",
+        severity: "HIGH",
+        message: `Possible reversed receipt detected: Transaction #${tx._id} — 'To Account' is "${tx.debitAccountId.name}" which is not a Cash/Bank account.`,
+        transactionId: tx._id,
+        date: tx.date,
+      });
+    }
+  }
+
+  // 2. Find Payment transactions where creditAccountId is NOT cashequivalent
+  const suspectPayments = await LedgerTransaction.find({ entryType: "Payment", isReversal: false })
+    .populate("debitAccountId creditAccountId")
+    .lean();
+
+  for (const tx of suspectPayments) {
+    if (tx.creditAccountId && !tx.creditAccountId.cashequivalent) {
+      alerts.push({
+        type: "REVERSED_PAYMENT",
+        severity: "HIGH",
+        message: `Possible reversed payment detected: Transaction #${tx._id} — 'From Account' is "${tx.creditAccountId.name}" which is not a Cash/Bank account.`,
+        transactionId: tx._id,
+        date: tx.date,
+      });
+    }
+  }
+
+  // 3. Accounts with negative cash balance
+  const cashAccounts = await LedgerAccount.find({
+    accountType: "Asset",
+    cashequivalent: true,
+    balance: { $lt: 0 },
+  }).lean();
+
+  for (const acc of cashAccounts) {
+    alerts.push({
+      type: "NEGATIVE_CASH_BALANCE",
+      severity: "MEDIUM",
+      message: `Cash/Bank account "${acc.name}" has a negative balance of ₹${acc.balance.toFixed(2)}.`,
+      accountId: acc._id,
+    });
+  }
+
+  return alerts;
 };
 
 const enrichTransactionsWithBalance = (transactions, accountId) => {
@@ -486,6 +604,7 @@ const enrichTransactionsWithBalance = (transactions, accountId) => {
 
     const isDebit = debitId && debitId.toString() === accountId.toString();
     const isCredit = creditId && creditId.toString() === accountId.toString();
+
     const balance = isDebit
       ? (tx.debitBalanceAfter !== undefined ? tx.debitBalanceAfter : tx.receiverBalanceAfter)
       : (tx.creditBalanceAfter !== undefined ? tx.creditBalanceAfter : tx.senderBalanceAfter);
@@ -496,8 +615,6 @@ const enrichTransactionsWithBalance = (transactions, accountId) => {
     return { ...tx, isDebit, isCredit, displayBalance: balance };
   });
 
-  // Calculation MUST follow nature-aware logic. 
-  // For reporting, we provide real-time totals, but the closing balance depends on account type.
   return { enriched, totalDebit, totalCredit };
 };
 
@@ -517,12 +634,18 @@ module.exports = {
   // Transaction services
   getRecentTransactions,
   getAccountTransactions,
+  createReceiptTransaction,
+  createPaymentTransaction,
+  createTransferTransaction,
+  createIncomeTransaction,
   createExpenseTransaction,
   createSettlementTransaction,
   createCreditNoteTransaction,
+  reverseTransactionService,
 
   // Reporting services
   getExpenseSummary,
   getFinancialSummary,
+  getLedgerHealthAlerts,
   enrichTransactionsWithBalance,
 };

@@ -12,8 +12,8 @@ const CreateAcct = async (req, res) => {
       status: req.body.status,
     };
 
-    if (req.files && req.files.length > 0) {
-      payload.profileDetails.profilePicture = req.files[0].path;
+    if (req.files && req.files.profilePicture && req.files.profilePicture.length > 0) {
+      payload.profileDetails.profilePicture = req.files.profilePicture[0].path;
     }
 
     const user = await Service.createAccount(payload);
