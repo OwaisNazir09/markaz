@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Donation Successful</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #f4f6f9 0%, #e5e9f0 100%);
+            padding: 20px;
+            min-height: 100vh;
+            color: #1f2933;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: 20px auto;
+            background-color: #ffffff;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .container:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 22px 45px rgba(0, 0, 0, 0.14);
+        }
+
+        .header {
+            background: linear-gradient(135deg, #0b57e4 0%, #0b57e4 100%);
+            color: #ffffff;
+            padding: 32px 20px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.12) 1%, transparent 1%);
+            background-size: 22px 22px;
+            opacity: 0.25;
+        }
+
+        .icon-circle {
+            width: 80px;
+            height: 80px;
+            background-color: rgba(255, 255, 255, 0.18);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 18px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .icon-circle i {
+            font-size: 36px;
+        }
+
+        .header h1 {
+            font-size: 2.4rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.92;
+            position: relative;
+            z-index: 1;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .greeting {
+            font-size: 1.35rem;
+            margin-bottom: 24px;
+            font-weight: 600;
+            color: #111827;
+        }
+
+        .message {
+            line-height: 1.75;
+            margin-bottom: 32px;
+            color: #4b5563;
+            font-size: 1.05rem;
+        }
+
+        .details-title {
+            font-size: 1.3rem;
+            color: #1e3c72;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .detail-item {
+            display: flex;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px dashed #d1d5db;
+        }
+
+        .detail-item:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .detail-label {
+            font-weight: 600;
+            color: #374151;
+            width: 150px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .detail-value {
+            color: #111827;
+            flex: 1;
+        }
+
+        .highlight {
+            color: #166534;
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+
+        .campaign-box {
+            background-color: #f1f5f9;
+            border-radius: 12px;
+            padding: 22px;
+            margin-top: 26px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+
+        }
+
+        .campaign-icon {
+            background-color: #1e3c72;
+            color: white;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .campaign-info h4 {
+            color: #1e3c72;
+            margin-bottom: 6px;
+        }
+
+        .campaign-info p {
+            color: #4b5563;
+            font-size: 0.95rem;
+        }
+
+        .thank-you {
+            text-align: center;
+            padding: 26px;
+            background-color: #f8fafc;
+            border-radius: 12px;
+            margin-top: 32px;
+            border-top: 2px solid #e5e7eb;
+        }
+
+        .thank-you h3 {
+            color: #166534;
+            margin-bottom: 10px;
+            font-size: 1.4rem;
+        }
+
+        .thank-you p {
+            color: #4b5563;
+            line-height: 1.65;
+            max-width: 620px;
+            margin: 0 auto;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                margin: 10px;
+            }
+
+            .content {
+                padding: 26px;
+            }
+
+            .detail-item {
+                flex-direction: column;
+                gap: 6px;
+            }
+
+            .detail-label {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="icon-circle" style=" background-color: #d1d5db;">
+                <i class="fas fa-heart" style="color:#e53935;"></i>
+            </div>
+            <h1>Donation Successful!</h1>
+            <p>Thank you for your generous contribution</p>
+        </div>
+
+        <div class="content">
+            <p class="greeting">Dear {{donorName}},</p>
+
+            <p class="message">
+                We are deeply grateful for your generous donation. Your support has been successfully received and will
+                make a meaningful difference in our mission. People like you help us continue our important work.
+            </p>
+
+            <h3 class="details-title">
+                <i class="fas fa-receipt"></i> Donation Details
+            </h3>
+
+            <div class="detail-item">
+                <div class="detail-label"><i class="fas fa-id-badge"></i> Transaction ID:</div>
+                <div class="detail-value highlight">{{transactionId}}</div>
+            </div>
+
+            <div class="detail-item">
+                <div class="detail-label"><i class="fas fa-hand-holding-heart"></i> Campaign:</div>
+                <div class="detail-value">{{campaignTitle}}</div>
+            </div>
+
+            <div class="detail-item">
+                <div class="detail-label"><i class="fas fa-rupee-sign"></i> Amount:</div>
+                <div class="detail-value highlight">₹{{amount}}</div>
+            </div>
+
+            <div class="detail-item">
+                <div class="detail-label"><i class="far fa-calendar-alt"></i> Date:</div>
+                <div class="detail-value">{{date}}</div>
+            </div>
+
+            <div class="campaign-box">
+                <div class="campaign-icon">
+                    <i class="fas fa-bullhorn"></i>
+                </div>
+                <div class="campaign-info">
+                    <h4>Campaign: {{campaignTitle}}</h4>
+                    <p>Your donation will support this initiative and help us achieve our goals. We’ll keep you informed
+                        about its impact.</p>
+                </div>
+            </div>
+
+            <div class="thank-you">
+                <h3><i class="fas fa-hands-helping"></i> Your Support Matters</h3>
+                <p>
+                    Your generous contribution helps us continue our mission at Markaz-i-Auqaf.
+                    We sincerely appreciate your trust and commitment.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const container = document.querySelector('.container');
+            container.style.opacity = '0';
+            container.style.transform = 'translateY(20px)';
+
+            setTimeout(() => {
+                container.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+                container.style.opacity = '1';
+                container.style.transform = 'translateY(0)';
+            }, 100);
+
+            const header = document.querySelector('.header');
+            header.addEventListener('mouseenter', function () {
+                this.style.background = 'linear-gradient(135deg, #163a70 0%, #1f4f8c 100%)';
+            });
+
+            header.addEventListener('mouseleave', function () {
+                this.style.background = 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)';
+            });
+        });
+    </script>
+</body>
+
+</html>
